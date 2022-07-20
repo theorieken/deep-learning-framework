@@ -4,7 +4,7 @@ This file contains the runner class which runs jobs (input as path to json)
 import pandas as pd
 
 from ..utils import Logger, Timer, bcolors
-from src.Modules.Model.BaseNeuralNetwork import AutomaticNetwork
+from src.Modules.Model.NeuralNetworks.FullyConnected import AutomaticNetwork
 from torch.utils.data import random_split, DataLoader
 from pathlib import Path
 from torch import autograd
