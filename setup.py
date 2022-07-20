@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='deep_learning_framework',
-    version='0.2',
+    version='0.1.5',
     license='MIT',
     author="Theo Rieken",
     author_email='mail@theorieken.de',

@@ -5,7 +5,7 @@ specified transformations to the data samples
 
 import importlib
 import copy
-from src.utils import Logger
+from src.deepframe.utils import Logger
 
 
 class BaseTransform(object):

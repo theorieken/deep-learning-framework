@@ -4,7 +4,7 @@ in your own context or pass it dicts to dynamically create configs.
 
 Theo Rieken
 """
-from src.Runner.Runner import Runner
+from src.deepframe.Runner import Runner
 import sys
 
 # Main guard for multithreading the runner "below"

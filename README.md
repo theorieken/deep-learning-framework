@@ -8,26 +8,67 @@ training progress with *Weights and Biases*. You specify a `run` with a dedicate
 
 ## Launch a Project
 
-1) Run `pip install -r requirements.txt` to install all required packages
-2) Copy the sample config `./config_sample.json` to `./configs` (name it whatever)
-3) Open the `main.py` file and add the path to your config `/config/<your-config>` 
-4) Run the main file `python main.py`
+1) Run `pip install deep-learning-framework==0.1.4` to install this framework
+2) Create a job configuration file (or get started with the sample in `~/examples`)
+3) Create a `main.py` file as depicted below and run the job file  
 
 ```python
-from src.Runner.Runner import Runner
-
+from src.deepframe.Runner import Runner
 
 # Add all the jobs, that you want to run, here
 jobs = ['config/<your-config>.json']
 
 # Main guard for multithreading the runner "below"
 if __name__ == '__main__':
-
     # Create a runner instance and pass it the jobs
     worker = Runner(jobs=jobs)
 
     # Start working on the jobs until all are finished
     worker.run()
+```
+
+Obviously, most often you will want to create your own models, loss functions, datasets or
+metric loggers. For that reason, this framework expects your framework to have the following 
+folder structure. In your `job description` file, you can specify **standard** datasets, loss 
+functions, models and so on. In this case, the Runner will try to load what you specified from 
+e.g. torchvision, MONAI or torch itself. If you specify the `name` attribute of e.g. a dataset
+or model with the name of a file you created in the respective locations, the Runner will use
+your files making this framework a home to your ideas. 
+
+```
+/your-project
+│   main.py
+│   ...
+│
+└───/config
+│   │   job_01.json
+│   │   job_02.json
+│   │   job_03.json
+│   │   runner.py
+│
+└───/src
+│   │   losses.py
+│   │   
+│   └───/Models
+│   │   │   CancerUNet.py
+│   │   │   CompanySalesPredictor.py
+│   │   │   ...
+│   │
+│   └───/MetricLoggers
+│   │   │   CancerPredictionLogger.py
+│   │   │   CompanSalesLogger.py
+│   │   │   ...
+│   │
+│   └───/Evaluators
+│   │   │   CancerUnetEvaluator.py
+│   │   │   CompanySalesEvaluator.py
+│   │   │   ...
+│   │
+│   └───/Datasets
+│       │   PatientDataset.py
+│       │   FullYearSalesDataset.py
+│       │   ...
+│
 ```
 
 ## Using Configuration Files

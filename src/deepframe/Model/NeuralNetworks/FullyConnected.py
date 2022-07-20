@@ -2,7 +2,7 @@ import importlib
 import sys
 import traceback
 import torch
-from src.utils import Logger
+from src.deepframe.utils import Logger
 from ..BaseNeuralNetwork import BaseNeuralNetwork
 
 

@@ -3,8 +3,8 @@ This file contains the runner class which runs jobs (input as path to json)
 """
 import pandas as pd
 
-from ..utils import Logger, Timer, bcolors
-from src.Modules.Model.NeuralNetworks.FullyConnected import AutomaticNetwork
+from src.deepframe.utils import Logger, Timer, bcolors
+from src.deepframe.Model.NeuralNetworks.FullyConnected import AutomaticNetwork
 from torch.utils.data import random_split, DataLoader
 from pathlib import Path
 from torch import autograd
@@ -617,7 +617,7 @@ class Runner:
                 Logger.log("Using the automatic network as fallback")
 
             # Check for module in model distributions
-            module = importlib.import_module('src.Modules.Model.Distributions')
+            module = importlib.import_module('src.Models')
 
             # Load the model from the distributions
             model = getattr(module, str(model_choice))
@@ -833,7 +833,7 @@ class Runner:
         try:
 
             # Try to load a metric logger from logger distributions
-            module = importlib.import_module("src.Modules.MetricLogger.Distributions")
+            module = importlib.import_module("src.MetricLoggers")
             logger_class = getattr(module, metric_logger_setup["name"])
 
             # Log usage of this logger
@@ -897,7 +897,7 @@ class Runner:
         # Try to load the specified evaluator from evaluator distributions
         try:
 
-            module = importlib.import_module("src.Modules.Evaluator.Distributions")
+            module = importlib.import_module("src.Evaluators")
             evaluater_class = getattr(module, evaluation_setup["name"])
             return evaluater_class()
 
@@ -916,7 +916,7 @@ class Runner:
         # Try to load the specified data set from distributions
         try:
             # TODO: keep preload or drop it?
-            module = importlib.import_module("src.Modules.Dataset.Distributions")
+            module = importlib.import_module("src.Datasets")
             dataset = getattr(module, description['name'])
             return dataset(**description)
 
