@@ -2,7 +2,7 @@ import importlib
 import sys
 import traceback
 import torch
-from src.deepframe.utils import Logger
+from deepframe.utils import Logger
 from ..BaseNeuralNetwork import BaseNeuralNetwork
 
 
@@ -30,17 +30,26 @@ class AutomaticNetwork(BaseNeuralNetwork):
         # Call super class constructor
         super().__init__()
 
-        # Initiate the device with CPU
-        self.device = "cpu"
+        try:
+            # Initiate the device with CPU
+            self.device = "cpu"
 
-        # Initiate the network with
-        self.layers = None
+            # Initiate the network with
+            self.layers = None
 
-        # Save the description in case it is needed later
-        self.description = description
+            # Save the description in case it is needed later
+            self.description = description
 
-        # create this network based on the network description
-        self._build_layers()
+            # create this network based on the network description
+            self._build_layers()
+
+        except Exception as error:
+
+            # Log the failed generation
+            Logger.log("Network generation failed: " + str(error), type="ERROR")
+
+            # Raise final exception to end process
+            raise Exception("Network generation has failed")
 
     def to(self, device):
         """

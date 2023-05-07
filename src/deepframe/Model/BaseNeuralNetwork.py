@@ -6,6 +6,9 @@ class BaseNeuralNetwork(nn.Module):
     A wrapper for every neural network that is in this environment
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
     def get_parameter_count(self):
         """
         Method returns the total number of learnable parameters

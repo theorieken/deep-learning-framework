@@ -2,9 +2,9 @@
 This file contains the runner class which runs jobs (input as path to json)
 """
 import pandas as pd
-
-from src.deepframe.utils import Logger, Timer, bcolors
-from src.deepframe.Model.NeuralNetworks.FullyConnected import AutomaticNetwork
+import __main__
+from deepframe.utils import Logger, Timer, bcolors
+from deepframe.Model.NeuralNetworks.FullyConnected import AutomaticNetwork
 from torch.utils.data import random_split, DataLoader
 from pathlib import Path
 from torch import autograd
@@ -59,22 +59,27 @@ class Runner:
     # A reference to the wandb worker
     wandb_worker = None
 
-    def __init__(self, jobs=None, dataset=None, model=None):
+    def __init__(self, jobs: list, path=None, dataset=None, model=None, evaluator=None):
         """
         Constructor of trainer where some basic operations are done
 
-        :param jobs: a list of json files to be executed
-        :param debug: when debug mode is on, more status messages will be printed
-        :param dataset: A data set that will overwrite the data set specified in the job
+        :param jobs: a list of paths to json files that shall be executed
+        :param path: the location where the framework will store files in
+        :param model: an instance that will be used no matter what is noted in the job
+        :param dataset: an instance that will be used no matter what is noted in the job
+        :param evaluator: an instance that will be used no matter what is noted in the job
         """
 
         # Obtain the base path at looking at the parent of the parents parent
-        base_path = Path(__file__).parent.parent.parent.resolve()
+        self.base_path = os.path.dirname(__main__.__file__)
 
         # Fixing possible SSL errors
         ssl._create_default_https_context = ssl._create_unverified_context
+
         # A data set that will overwrite the data set specified in the job
         self.dataset = dataset
+        self.path = path
+        self.evaluator = evaluator
         self.model = model
 
         # Initialize eval and train data variables
@@ -92,7 +97,7 @@ class Runner:
         for job in jobs:
 
             # Create the absolut path to the job file
-            job_path = os.path.join(base_path, job)
+            job_path = os.path.join(self.base_path, job) if not os.path.isabs(job) else job
 
             # Check whether the job file exist
             if os.path.exists(job_path):
@@ -139,14 +144,11 @@ class Runner:
                 # Save the current job for instance access
                 self.job = job
 
-                # Obtain the base path at looking at the parent of the parents parent
-                base_path = Path(__file__).parent.parent.parent.resolve()
-
                 # A directory that stores jobs data
-                job_data_dir = os.path.join(base_path, "jobs", job["name"])
+                job_data_dir = os.path.join(self.base_path, "jobs", job["name"])
 
                 # Save this path to the runner object for now to be able to store stuff in there
-                self.path = job_data_dir
+                self.path = job_data_dir if self.path is None else self.path
 
                 # Check if log dir exists, if not create
                 Path(job_data_dir).mkdir(parents=True, exist_ok=True)
@@ -270,7 +272,7 @@ class Runner:
         self.timer.start("creating dataset")
 
         # Get dataset if not given
-        dataset = Runner._get_dataset(self.job["training"]["dataset"])
+        dataset = self._get_dataset(self.job["training"]["dataset"])
 
         # Start timer to measure data set
         creation_took = self.timer.get_time("creating dataset")
@@ -298,8 +300,8 @@ class Runner:
         # Get an optimizer, scheduler and loss function
         optimizer = self._get_optimizer(self.job["training"]["optimizer"])
         scheduler = self._get_lr_scheduler(optimizer, self.job["training"]["lr_scheduler"])
-        metric_logger = Runner._get_metric_logger(self.job["training"]["metric_logger"])
-        loss_function = Runner._get_loss_function(self.job["training"]["loss"])
+        metric_logger = self._get_metric_logger(self.job["training"]["metric_logger"])
+        loss_function = self._get_loss_function(self.job["training"]["loss"])
 
         # Enable weights and biases logging
         if self.job["wandb_api_key"]:
@@ -556,7 +558,7 @@ class Runner:
         evaluation_setup = self.job["evaluation"]
 
         # Get the test data set
-        dataset = Runner._get_dataset(self.job["evaluation"]["dataset"])
+        dataset = self._get_dataset(self.job["evaluation"]["dataset"])
 
         # Get the test data loader
         self.test_data, _ = Runner._get_dataloader(dataset=dataset, batch_size=self.job["evaluation"]["batch_size"])
@@ -598,6 +600,56 @@ class Runner:
         if self.job["wandb_api_key"]:
             self.wandb_worker.save(save_path)
 
+    def _load_module(self, name, data, loc=None, alt_loc=None, default_model=None):
+        """
+        Method loads a module dynamically from the users directory
+
+        :param loc: what location in the users project
+        :param alt_loc: alternative location to look in
+        :param name: the name of the module
+        :param data: the data that shall be passed ot the model
+        :param default_model: a default model if needed
+        :return: the instance of the module
+        """
+
+        # Check if the network exists
+        if loc is not None and os.path.isfile(os.path.join(self.base_path, os.path.join(*loc.split('.')), name + ".py")):
+
+            # Try to import local custom module
+            try:
+
+                # Try to load from location
+                module = importlib.import_module('{}.{}'.format(loc, name))
+                model = getattr(module, str(name))
+                model_instance = model(**data)
+                return model_instance
+
+            # In case the model does not exist
+            except Exception as error:
+
+                # Log the error that occured
+                Logger.log("{} could not be loaded: {}".format(name, str(error)), type="ERROR")
+
+        else:
+
+            # try alternative sources
+            if alt_loc is not None:
+                # Try to load
+                module = importlib.import_module("{}".format(alt_loc))
+                model = getattr(module, name)
+                model_instance = model(**data)
+                return model_instance
+
+            # Try default or exit
+            if default_model is not None:
+                Logger.log("{} not found. Using default as fallback.".format(name), type="ERROR")
+                model_instance = default_model(**data)
+                return model_instance
+
+        # Exit with error
+        Logger.log("{} not found.".format(name), type="ERROR")
+        raise Exception("Loading module failed")
+
     def _get_model(self, model_setup: dict):
         """
         This method returns the model required for the job.
@@ -609,30 +661,16 @@ class Runner:
         # Extract the model name from the setup
         model_choice = model_setup.pop("name", None)
 
-        # Try to import local custom module
-        try:
-
-            # Check if there is a model choice, otherwise fallback to automatic network
-            if model_choice is None:
-                Logger.log("Using the automatic network as fallback")
-
-            # Check for module in model distributions
-            module = importlib.import_module('src.Models')
-
-            # Load the model from the distributions
-            model = getattr(module, str(model_choice))
-
-            # Create an instance of the desired model
-            model_instance = model(**model_setup)
-
-        # In case the model does not exist
-        except:
-
-            if model_choice is None:
-                Logger.log("Model {} could not be loaded. Using AutomaticNetwork as fallback.".format(model_choice), type="ERROR")
+        # If there is no choice, use default network
+        if model_choice is None:
 
             # Use the smart model builder as fallback method
             model_instance = AutomaticNetwork(model_setup)
+
+        else:
+
+            # Try to load the model
+            model_instance = self._load_module(loc='src.Models', name=model_choice, data=model_setup, default_model=AutomaticNetwork)
 
         # Check if checkpoint exists
         if self.checkpoint is not None:
@@ -645,23 +683,17 @@ class Runner:
         return model_instance
 
     def _get_optimizer(self, optimizer_setup: dict, **params):
-        if optimizer_setup["name"] == "Adam":
-            optimizer = torch.optim.Adam(self.model.parameters(), lr=optimizer_setup["learning_rate"])
-            if self.checkpoint is not None:
-                Logger.log("Recovering optimizer Adam from the last checkpoint", type="WARNING")
-                try:
-                    optimizer.load_state_dict(self.checkpoint["optimizer"])
-                except Exception:
-                    Logger.log("Could not recover optimizer checkpoint state", type="ERROR")
-            return optimizer
-        else:
-            raise ValueError(
-                bcolors.FAIL
-                + "ERROR: Optimizer "
-                + optimizer_setup["name"]
-                + " not recognized, aborting"
-                + bcolors.ENDC
-            )
+
+        optimizer_name = optimizer_setup.pop("name")
+        optimizer_setup['params'] = self.model.parameters()
+        optimizer = self._load_module(alt_loc="torch.optim", name=optimizer_name, data=optimizer_setup)
+        if self.checkpoint is not None:
+            Logger.log("Recovering optimizer Adam from the last checkpoint", type="WARNING")
+            try:
+                optimizer.load_state_dict(self.checkpoint["optimizer"])
+            except Exception as error:
+                Logger.log("Could not recover optimizer checkpoint state: {}".format(str(error)), type="ERROR")
+        return optimizer
 
     def _get_lr_scheduler(self, optimizer, scheduler_setup: dict):
         """
@@ -674,12 +706,9 @@ class Runner:
         TODO: make this dynamic
         """
 
-        # Every scheduler will need the optimizer
         scheduler_setup["optimizer"] = optimizer
         scheduler_name = scheduler_setup.pop("name")
-        module = importlib.import_module("torch.optim.lr_scheduler")
-        lr_scheduler_class = getattr(module, scheduler_name)
-        scheduler = lr_scheduler_class(**scheduler_setup)
+        scheduler = self._load_module(alt_loc='torch.optim.lr_scheduler', name=scheduler_name, data=scheduler_setup)
 
         # Check if there is a checkpoint
         if self.checkpoint is not None:
@@ -693,6 +722,39 @@ class Runner:
 
         # Return the scheduler
         return scheduler
+
+    def _get_dataset(self, description):
+        """
+        Method creates the data set instance and returns it based on the data (contains job description)
+
+        :return: Dataset instance that contains samples
+        """
+
+        dataset = self._load_module(loc="src.Datasets", name=description['name'], data=description)
+        return dataset
+
+    def _get_loss_function(self, loss_function_setup):
+
+        loss_name = loss_function_setup.pop("name")
+        try:
+            loss_fun = self._load_module(alt_loc="src.losses", name=loss_name, data=loss_function_setup)
+        except:
+            loss_fun = self._load_module(alt_loc="torch.nn", name=loss_name, data=loss_function_setup)
+
+        return loss_fun
+
+    def _get_metric_logger(self, metric_logger_setup):
+        """
+        Method constructs a metric logger (based on json description) or returns
+        None if there is nothing specified or faulty
+
+        :param metric_logger_setup: dict with setup
+        :return: metric logger instance as callable
+        """
+
+        # Attempt to build the metric logger
+        logger = self._load_module(loc="src.MetricLoggers", name=metric_logger_setup['name'], data=metric_logger_setup)
+        return logger
 
     def _get_device(self):
 
@@ -808,50 +870,6 @@ class Runner:
             self.wandb_worker.log(data, commit=commit)
 
     @staticmethod
-    def _get_loss_function(loss_function_setup):
-        try:
-            module = importlib.import_module("src.losses")
-            loss_class = getattr(module, loss_function_setup["name"])
-            loss_fun = loss_class(**loss_function_setup)
-        except:
-            module = importlib.import_module("torch.nn")
-            loss_class = getattr(module, loss_function_setup["name"])
-            loss_fun = loss_class()
-
-        return loss_fun
-
-    @staticmethod
-    def _get_metric_logger(metric_logger_setup):
-        """
-        Method constructs a metric logger (based on json description) or returns
-        None if there is nothing specified or faulty
-
-        :param metric_logger_setup: dict with setup
-        :return: metric logger instance as callable
-        """
-
-        try:
-
-            # Try to load a metric logger from logger distributions
-            module = importlib.import_module("src.MetricLoggers")
-            logger_class = getattr(module, metric_logger_setup["name"])
-
-            # Log usage of this logger
-            Logger.log("Runner will use metrics logger " + metric_logger_setup["name"])
-
-            # Return logger instance to runner
-            return logger_class(**metric_logger_setup)
-
-        except Exception as error:
-
-            # Check if there was a logger specified and flash error then
-            if 'name' in metric_logger_setup:
-                Logger.log("Metric logger could not be built: " + str(error), type="ERROR")
-
-        # Fallback return is none
-        return None
-
-    @staticmethod
     def _check_job_data(job_data: dict):
         """
         This method checks whether a passed job (in terms of a path to a json file) contains everything needed
@@ -897,30 +915,11 @@ class Runner:
         # Try to load the specified evaluator from evaluator distributions
         try:
 
-            module = importlib.import_module("src.Evaluators")
+            module = importlib.import_module("src.Evaluator")
             evaluater_class = getattr(module, evaluation_setup["name"])
             return evaluater_class()
 
         # Check if evaluator does not exist in distributions
-        except Exception as error:
-            raise error
-
-    @staticmethod
-    def _get_dataset(description):
-        """
-        Method creates the data set instance and returns it based on the data (contains job description)
-
-        :return: Dataset instance that contains samples
-        """
-
-        # Try to load the specified data set from distributions
-        try:
-            # TODO: keep preload or drop it?
-            module = importlib.import_module("src.Datasets")
-            dataset = getattr(module, description['name'])
-            return dataset(**description)
-
-        # Check if dataset does not exist in distributions
         except Exception as error:
             raise error
 

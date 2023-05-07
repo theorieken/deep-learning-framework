@@ -5,7 +5,6 @@
     "wandb_project_name": "Parameter Sweep",
     "wandb_prediction_examples": 8,
     "wandb_api_key": null,
-    "log_3d_csv": true,
     "model": {
         "name": "OrganNet25D",
         "padding": "yes",

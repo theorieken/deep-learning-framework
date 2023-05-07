@@ -1,4 +1,4 @@
-class Dataset:
+class BaseDataset:
     """
     A wrapper class for data set for this environment
     """
