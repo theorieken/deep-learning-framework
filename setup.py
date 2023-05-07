@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='deep_learning_framework',
-    version='0.1.12',
+    version='0.1.13',
     license='MIT',
     long_description="A framework for deep learning experiments",
     author="Theo Rieken",
